@@ -1,0 +1,92 @@
+{% extends 'rutas/base.html' %}
+{% load static %}
+
+{% block extra_head %}
+    <style>
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <h2>Mapa de Distribución</h2>
+
+    {% if error_message %}
+        <div style="background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 10px; border-radius: 4px; margin-bottom: 20px;">
+            <p><strong>Error:</strong> {{ error_message }}</p>
+        </div>
+    {% endif %}
+
+    {# FORM PARA AGREGAR PUNTO #}
+    <form method="post" action="{% url 'agregar_punto' %}">
+        {% csrf_token %}
+        <label for="nombre">Nombre del Punto:</label>
+        <input type="text" id="nombre" name="nombre" required><br><br>
+
+        <label for="direccion">Dirección:</label>
+        <input type="text" id="direccion" name="direccion" required><br><br>
+
+        <button type="submit">Agregar Punto de Entrega</button>
+    </form>
+
+    <hr>
+
+    <h3>Puntos de Entrega Actuales:</h3>
+    <ul id="puntos-lista">
+        {% for punto in puntos_entrega %}
+            <li>{{ punto.nombre }} - {{ punto.direccion }} (Orden: {{ punto.orden_optimo|default:"N/A" }})</li>
+        {% empty %}
+            <li>No hay puntos de entrega aún.</li>
+        {% endfor %}
+    </ul>
+
+    <hr>
+
+    {# FORM PARA OPTIMIZAR RUTA #}
+    <form method="post" action="{% url 'optimizar_ruta' %}">
+        {% csrf_token %}
+        <label for="lat_inicio">Latitud de Inicio:</label>
+        <input type="text" id="lat_inicio" name="lat_inicio" value="-36.8470" required><br><br>
+
+        <label for="lng_inicio">Longitud de Inicio:</label>
+        <input type="text" id="lng_inicio" name="lng_inicio" value="-73.1157" required><br><br>
+
+        <button type="submit">Optimizar Ruta con IA</button>
+    </form>
+
+    {# FORM PARA BORRAR TODOS LOS PUNTOS DE LA BD #}
+    <form method="post" action="{% url 'borrar_puntos' %}" style="margin-top: 10px;">
+        {% csrf_token %}
+        <button type="submit" onclick="return confirm('¿Seguro que quieres borrar TODOS los puntos de entrega?')">
+            Borrar todos los puntos de entrega
+        </button>
+    </form>
+
+    {# BOTÓN PARA LIMPIAR SOLO EL MAPA (RUTA + MARCADORES) #}
+    <button type="button" onclick="clearMap()" style="margin-top: 10px;">
+        Limpiar mapa (ruta y marcadores)
+    </button>
+
+    <hr>
+
+    {% if total_distance_km is not None %}
+        <div style="background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 10px; border-radius: 4px; margin-top: 20px; margin-bottom: 20px;">
+            <p><strong>Distancia Total Optimizada:</strong> {{ total_distance_km }} km</p>
+            <p><strong>Consumo Estimado de Bencina:</strong> {{ fuel_consumed_liters }} litros</p>
+        </div>
+    {% endif %}
+    
+    <div id="map"></div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/main.js' %}"></script>
+    <script>
+        // Datos que vienen desde Django, usados por main.js
+        var google_maps_api_key = "{{ google_maps_api_key }}";
+        var puntos_entrega_data = JSON.parse('{{ puntos_entrega_json|escapejs }}');
+    </script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&callback=initMap"></script>
+{% endblock %}
