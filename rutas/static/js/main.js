@@ -176,3 +176,58 @@ function toggleOrigenCustom() {
 window.initMap = initMap;
 window.clearMap = clearMap;
 window.toggleOrigenCustom = toggleOrigenCustom;
+
+
+// --- BORRAR PUNTO INDIVIDUAL ---
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== "") {
+        const cookies = document.cookie.split(";");
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + "=")) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function eliminarPunto(url) {
+    if (!confirm("¿Seguro que quieres eliminar este punto de entrega?")) {
+        return;
+    }
+
+    const csrftoken = getCookie("csrftoken");
+
+    fetch(url, {
+        method: "POST",
+        headers: {
+            "X-CSRFToken": csrftoken,
+            "X-Requested-With": "XMLHttpRequest",
+        },
+    })
+    .then((response) => {
+        if (!response.ok) {
+            console.error("Error al borrar. Status:", response.status);
+            throw new Error("Error al borrar el punto");
+        }
+        return response.json();
+    })
+    .then((data) => {
+        if (data.ok) {
+            // Se borró en backend; recargamos para refrescar lista + mapa
+            location.reload();
+        } else {
+            alert("El servidor respondió, pero no confirmó el borrado.");
+        }
+    })
+    .catch((err) => {
+        console.error(err);
+        alert("No se pudo borrar el punto");
+    });
+}
+
+window.eliminarPunto = eliminarPunto;

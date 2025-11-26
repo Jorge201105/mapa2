@@ -5,19 +5,39 @@ from .models import PuntoEntrega
 import requests
 from . import optimizer # ¡Importamos nuestro módulo de optimización!
 
+# views.py
+from django.shortcuts import get_object_or_404
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+
+
+
 DEFAULT_FUEL_PRICE = 1250  # CLP/L por defecto
+# views.py (tu vista del mapa)
+
+
+import json
+from django.conf import settings
+from django.shortcuts import render
+from .models import PuntoEntrega
+
+DEFAULT_FUEL_PRICE = 1300  # o el valor que tengas
 
 def mapa_view(request):
     puntos_entrega = PuntoEntrega.objects.all().order_by('orden_optimo')
 
-    puntos_json = json.dumps([{
-        'id': p.id,
-        'nombre': p.nombre,
-        'direccion': p.direccion,
-        'latitud': float(p.latitud),
-        'longitud': float(p.longitud),
-        'orden_optimo': p.orden_optimo
-    } for p in puntos_entrega])
+    # Aquí generas el JSON que se usará en el JS del mapa
+    puntos_json = json.dumps([
+        {
+            'id': p.id,
+            'nombre': p.nombre,
+            'direccion': p.direccion,
+            'latitud': float(p.latitud),
+            'longitud': float(p.longitud),
+            'orden_optimo': p.orden_optimo,
+        }
+        for p in puntos_entrega
+    ])
 
     context = {
         'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
@@ -41,6 +61,7 @@ def mapa_view(request):
     }
 
     return render(request, 'rutas/mapa.html', context)
+
 
 def agregar_punto(request):
     if request.method == 'POST':
@@ -236,3 +257,11 @@ def borrar_puntos(request):
         PuntoEntrega.objects.all().delete()
     # Cambia 'mapa' por el nombre de tu vista/URL del mapa
     return redirect('mapa')
+
+
+
+@require_POST
+def borrar_punto(request, punto_id):
+    punto = get_object_or_404(PuntoEntrega, id=punto_id)
+    punto.delete()
+    return JsonResponse({"ok": True})
