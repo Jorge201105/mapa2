@@ -1,32 +1,28 @@
-import json
-from django.shortcuts import render, redirect
-from django.conf import settings
-from .models import PuntoEntrega
-import requests
-from . import optimizer # ¡Importamos nuestro módulo de optimización!
-
 # views.py
-from django.shortcuts import get_object_or_404
+
+import json
+import requests
+
+from django.conf import settings
+from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 
-
-
-DEFAULT_FUEL_PRICE = 1250  # CLP/L por defecto
-# views.py (tu vista del mapa)
-
-
-import json
-from django.conf import settings
-from django.shortcuts import render
 from .models import PuntoEntrega
+from . import optimizer  # módulo de optimización
 
-DEFAULT_FUEL_PRICE = 1300  # o el valor que tengas
+# Precio por defecto de la bencina (CLP/L)
+DEFAULT_FUEL_PRICE = 1250
+
 
 def mapa_view(request):
-    puntos_entrega = PuntoEntrega.objects.all().order_by('orden_optimo')
+    """
+    Muestra el mapa, la lista de puntos, el formulario de origen/destino
+    y los resultados de la última optimización.
+    """
+    puntos_entrega = PuntoEntrega.objects.all().order_by('orden_optimo', 'id')
 
-    # Aquí generas el JSON que se usará en el JS del mapa
+    # JSON que usará el JS para dibujar los puntos en el mapa
     puntos_json = json.dumps([
         {
             'id': p.id,
@@ -64,51 +60,71 @@ def mapa_view(request):
 
 
 def agregar_punto(request):
-    if request.method == 'POST':
-        nombre = request.POST.get('nombre')
-        direccion = request.POST.get('direccion')
-
-        if not nombre or not direccion:
-            request.session['error_message'] = 'Nombre y dirección son obligatorios.'
-            return redirect('mapa')
-
-        latitud = request.POST.get('latitud')
-        longitud = request.POST.get('longitud')
-
-        # Geocodificación si no se proporcionan lat/lng
-        if not latitud or not longitud:
-            try:
-                geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={direccion}&key={settings.GOOGLE_MAPS_API_KEY}"
-                response = requests.get(geocode_url)
-                data = response.json()
-                if data['status'] == 'OK' and data['results']:
-                    location = data['results'][0]['geometry']['location']
-                    latitud = location['lat']
-                    longitud = location['lng']
-                else:
-                    request.session['error_message'] = f"No se pudo geocodificar la dirección: {direccion}. Estado: {data['status']}"
-                    return redirect('mapa')
-            except requests.exceptions.RequestException as e:
-                request.session['error_message'] = f"Error de conexión con la API de geocodificación: {e}"
-                return redirect('mapa')
-            except Exception as e:
-                request.session['error_message'] = f"Error inesperado al geocodificar: {e}"
-                return redirect('mapa')
-        
-        # Convertir a Decimal para el modelo
-        try:
-            latitud = float(latitud)
-            longitud = float(longitud)
-        except ValueError:
-            request.session['error_message'] = 'Latitud o Longitud con formato incorrecto.'
-            return redirect('mapa')
-
-        PuntoEntrega.objects.create(nombre=nombre, direccion=direccion, latitud=latitud, longitud=longitud)
+    """
+    Agrega un punto de entrega. Si no vienen lat/lng, geocodifica la dirección.
+    """
+    if request.method != 'POST':
         return redirect('mapa')
-    return redirect('mapa') # Si se accede directamente a /agregar_punto sin POST, redirige al mapa
+
+    nombre = request.POST.get('nombre')
+    direccion = request.POST.get('direccion')
+
+    if not nombre or not direccion:
+        request.session['error_message'] = 'Nombre y dirección son obligatorios.'
+        return redirect('mapa')
+
+    latitud = request.POST.get('latitud')
+    longitud = request.POST.get('longitud')
+
+    # Geocodificación si no se proporcionan lat/lng
+    if not latitud or not longitud:
+        try:
+            geocode_url = "https://maps.googleapis.com/maps/api/geocode/json"
+            params = {
+                "address": direccion,
+                "key": settings.GOOGLE_MAPS_API_KEY
+            }
+            response = requests.get(geocode_url, params=params)
+            data = response.json()
+            if data['status'] == 'OK' and data['results']:
+                location = data['results'][0]['geometry']['location']
+                latitud = location['lat']
+                longitud = location['lng']
+            else:
+                request.session['error_message'] = (
+                    f"No se pudo geocodificar la dirección: {direccion}. "
+                    f"Estado: {data.get('status')}"
+                )
+                return redirect('mapa')
+        except requests.exceptions.RequestException as e:
+            request.session['error_message'] = f"Error de conexión con la API de geocodificación: {e}"
+            return redirect('mapa')
+        except Exception as e:
+            request.session['error_message'] = f"Error inesperado al geocodificar: {e}"
+            return redirect('mapa')
+
+    # Convertir a float (el modelo ya se encargará del Decimal si corresponde)
+    try:
+        latitud = float(latitud)
+        longitud = float(longitud)
+    except ValueError:
+        request.session['error_message'] = 'Latitud o Longitud con formato incorrecto.'
+        return redirect('mapa')
+
+    PuntoEntrega.objects.create(
+        nombre=nombre,
+        direccion=direccion,
+        latitud=latitud,
+        longitud=longitud,
+    )
+    return redirect('mapa')
 
 
 def optimizar_ruta(request):
+    """
+    Toma los puntos de entrega, el origen/destino, construye la matriz de distancias,
+    resuelve el TSP y guarda el orden óptimo + métricas de consumo/costo en sesión.
+    """
     if request.method != 'POST':
         return redirect('mapa')
 
@@ -133,18 +149,25 @@ def optimizar_ruta(request):
         request.session['error_message'] = 'La dirección de origen no puede estar vacía.'
         return redirect('mapa')
 
-    # 2) DESTINO (puede ser igual al origen o una de las bodegas)
+    # 2) DESTINO (puede ser igual al origen, una bodega o una dirección personalizada)
     destino_predef = request.POST.get('destino_predefinido', '').strip()
+    destino_custom = request.POST.get('destino_custom', '').strip()
 
-    if destino_predef == 'same_origin' or not destino_predef:
+    if destino_predef == 'custom':
+        direccion_destino = destino_custom
+    elif destino_predef == 'same_origin' or not destino_predef:
         # Por defecto, si no elige nada, volvemos al origen
         direccion_destino = direccion_origen
     else:
         direccion_destino = destino_predef
 
-    # 3) GEOCOGIR ORIGEN
+    if not direccion_destino:
+        request.session['error_message'] = 'La dirección de destino no puede estar vacía.'
+        return redirect('mapa')
+
+    # 3) GEOCODIFICAR ORIGEN
+    geocode_url = "https://maps.googleapis.com/maps/api/geocode/json"
     try:
-        geocode_url = "https://maps.googleapis.com/maps/api/geocode/json"
         params_origen = {
             "address": direccion_origen,
             "key": settings.GOOGLE_MAPS_API_KEY
@@ -160,17 +183,19 @@ def optimizar_ruta(request):
             request.session['origen_lat'] = lat_inicio
             request.session['origen_lng'] = lng_inicio
         else:
-            request.session['error_message'] = f"No se pudo geocodificar la dirección de origen: {direccion_origen} (estado: {data_o['status']})."
+            request.session['error_message'] = (
+                f"No se pudo geocodificar la dirección de origen: {direccion_origen} "
+                f"(estado: {data_o.get('status')})."
+            )
             return redirect('mapa')
     except Exception as e:
         request.session['error_message'] = f"Error al geocodificar la dirección de origen: {e}"
         return redirect('mapa')
 
-    # 4) GEOCOGIR DESTINO (si es distinto del origen, lo geocodificamos)
+    # 4) GEOCODIFICAR DESTINO
     destino_coords = None
     try:
         if direccion_destino == direccion_origen:
-            # Misma coordenada que el origen
             destino_coords = {'latitud': lat_inicio, 'longitud': lng_inicio}
             request.session['destino_lat'] = lat_inicio
             request.session['destino_lng'] = lng_inicio
@@ -189,7 +214,10 @@ def optimizar_ruta(request):
                 request.session['destino_lat'] = lat_dest
                 request.session['destino_lng'] = lng_dest
             else:
-                request.session['error_message'] = f"No se pudo geocodificar la dirección destino: {direccion_destino} (estado: {data_d['status']})."
+                request.session['error_message'] = (
+                    f"No se pudo geocodificar la dirección destino: {direccion_destino} "
+                    f"(estado: {data_d.get('status')})."
+                )
                 return redirect('mapa')
     except Exception as e:
         request.session['error_message'] = f"Error al geocodificar la dirección destino: {e}"
@@ -200,34 +228,37 @@ def optimizar_ruta(request):
         puntos_entrega_db,
         punto_inicio_coords,
         settings.GOOGLE_MAPS_API_KEY,
-        dest_coords=destino_coords
+        dest_coords=destino_coords,
     )
 
     if distance_matrix is None:
-        request.session['error_message'] = 'No se pudo obtener la matriz de distancias. Revisa la clave API o la conexión.'
+        request.session['error_message'] = (
+            'No se pudo obtener la matriz de distancias. '
+            'Revisa la clave API o la conexión.'
+        )
         return redirect('mapa')
 
     num_delivery_points = len(puntos_entrega_db)
-
-    # índice del destino en la matriz: 0 = origen, 1..n = entregas, n+1 = destino
     end_index = num_delivery_points + 1 if destino_coords is not None else None
 
-    # 6) OPTIMIZAR RUTA (camino start → entregas → destino)
+    # 6) OPTIMIZAR RUTA
     optimized_route_indices, total_distance_km = optimizer.solve_tsp(
         distance_matrix,
         num_delivery_points,
         start_index=0,
-        end_index=end_index
+        end_index=end_index,
     )
 
     if not optimized_route_indices:
-        request.session['error_message'] = 'No se pudo optimizar la ruta. Verifica los puntos o el algoritmo.'
+        request.session['error_message'] = (
+            'No se pudo optimizar la ruta. Verifica los puntos o el algoritmo.'
+        )
         return redirect('mapa')
 
-    # 7) GUARDAR ORDEN ÓPTIMO EN LOS PUNTOS (solo índices 1..n)
+    # 7) GUARDAR ORDEN ÓPTIMO (índices 1..n en la matriz)
     for i, matrix_idx in enumerate(optimized_route_indices[1:-1]):  # saltamos start y end
         if 1 <= matrix_idx <= num_delivery_points:
-            punto = puntos_entrega_db[matrix_idx - 1]  # -1 porque la lista empieza en 0
+            punto = puntos_entrega_db[matrix_idx - 1]  # lista empieza en 0
             punto.orden_optimo = i + 1
             punto.save()
 
@@ -251,17 +282,25 @@ def optimizar_ruta(request):
     return redirect('mapa')
 
 
-
 def borrar_puntos(request):
+    """
+    Borra todos los puntos de entrega.
+    """
     if request.method == "POST":
         PuntoEntrega.objects.all().delete()
-    # Cambia 'mapa' por el nombre de tu vista/URL del mapa
     return redirect('mapa')
-
 
 
 @require_POST
 def borrar_punto(request, punto_id):
-    punto = get_object_or_404(PuntoEntrega, id=punto_id)
-    punto.delete()
-    return JsonResponse({"ok": True})
+    """
+    Borra un solo punto de entrega (usado por el fetch JS).
+    Devuelve JSON para que el frontend sepa si fue OK.
+    """
+    try:
+        punto = get_object_or_404(PuntoEntrega, id=punto_id)
+        punto.delete()
+        return JsonResponse({"ok": True})
+    except Exception as e:
+        # Útil para depurar si algo raro pasa en producción
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)

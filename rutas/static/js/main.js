@@ -173,10 +173,18 @@ function toggleOrigenCustom() {
     }
 }
 
-window.initMap = initMap;
-window.clearMap = clearMap;
-window.toggleOrigenCustom = toggleOrigenCustom;
+function toggleDestinoCustom() {
+    const select = document.getElementById("destino_predefinido");
+    const wrapper = document.getElementById("destino_custom_wrapper");
 
+    if (!select || !wrapper) return;
+
+    if (select.value === "custom") {
+        wrapper.style.display = "block";
+    } else {
+        wrapper.style.display = "none";
+    }
+}
 
 // --- BORRAR PUNTO INDIVIDUAL ---
 
@@ -222,6 +230,7 @@ function eliminarPunto(url) {
             location.reload();
         } else {
             alert("El servidor respondió, pero no confirmó el borrado.");
+            console.error("Detalle error:", data.error);
         }
     })
     .catch((err) => {
@@ -230,4 +239,8 @@ function eliminarPunto(url) {
     });
 }
 
+window.initMap = initMap;
+window.clearMap = clearMap;
+window.toggleOrigenCustom = toggleOrigenCustom;
+window.toggleDestinoCustom = toggleDestinoCustom;
 window.eliminarPunto = eliminarPunto;

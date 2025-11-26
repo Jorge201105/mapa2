@@ -72,18 +72,11 @@
                         onclick="eliminarPunto('{% url "borrar_punto" punto.id %}')">
                     Eliminar
                 </button>
-
-
-
-
-
-                
             </li>
         {% empty %}
             <li>No hay puntos de entrega aún.</li>
         {% endfor %}
     </ul>
-
 
     <hr>
 
@@ -130,6 +123,7 @@
         <h4>Fin del recorrido</h4>
         <label for="destino_predefinido">Destino:</label><br>
         <select id="destino_predefinido" name="destino_predefinido"
+                onchange="toggleDestinoCustom()"
                 style="max-width: 400px; width: 100%;">
             <option value="same_origin">Volver a la misma bodega de origen</option>
 
@@ -142,9 +136,22 @@
             <option value="Camino Los Carros 1955, Concepción">
                 Terminar en Bodega Camino Los Carros
             </option>
+
+            <option value="custom">Otra dirección...</option>
         </select>
 
         <br><br>
+
+        <div id="destino_custom_wrapper" style="display:none; margin-top: 5px;">
+            <label for="destino_custom">Dirección personalizada de destino:</label><br>
+            <input type="text"
+                   id="destino_custom"
+                   name="destino_custom"
+                   placeholder="Calle, número, comuna"
+                   style="width: 100%; max-width: 400px;"
+                   value="">
+            <br><br>
+        </div>
 
         <h4>Precio de la bencina</h4>
         <label for="precio_bencina">Precio de bencina (CLP/L):</label><br>
@@ -155,7 +162,7 @@
                min="0"
                style="max-width: 200px;"
                value="{{ precio_bencina }}">
-        <small>(puedes modificarlo cuando cambie el precio por defecto el valor de la bencina es $1250)</small>
+        <small>(puedes modificarlo cuando cambie el precio; por defecto el valor es $1250)</small>
 
         <br><br>
 
