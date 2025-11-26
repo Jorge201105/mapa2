@@ -1,128 +1,194 @@
-var map;
-var markers = [];
-var directionsService;
-var directionsRenderer;
+// static/js/main.js
 
+let map;
+let markers = [];
+let directionsService = null;
+let directionsRenderer = null;
+
+/**
+ * Inicializa el mapa de Google.
+ * Usado como callback por la API de Google Maps (initMap).
+ */
 function initMap() {
-    // Coordenadas por defecto (Concepción / San Pedro)
-    var defaultLat = -36.84;
-    var defaultLng = -73.11;
+    console.log("initMap llamado");
 
-    // Si existen los inputs, tomamos esos valores para centrar el mapa
-    var startLatInput = document.getElementById('lat_inicio');
-    var startLngInput = document.getElementById('lng_inicio');
+    // Centro por defecto: Concepción
+    let center = { lat: -36.827, lng: -73.050 };
 
-    var start_lat = startLatInput ? parseFloat(startLatInput.value) : NaN;
-    var start_lng = startLngInput ? parseFloat(startLngInput.value) : NaN;
+    if (typeof origen_coords !== "undefined" && origen_coords && origen_coords.lat && origen_coords.lng) {
+        center = { lat: origen_coords.lat, lng: origen_coords.lng };
+    } else if (Array.isArray(puntos_entrega_data) && puntos_entrega_data.length > 0) {
+        center = {
+            lat: puntos_entrega_data[0].latitud,
+            lng: puntos_entrega_data[0].longitud
+        };
+    }
 
-    var center = {
-        lat: isNaN(start_lat) ? defaultLat : start_lat,
-        lng: isNaN(start_lng) ? defaultLng : start_lng
-    };
-
-    map = new google.maps.Map(document.getElementById('map'), {
-        zoom: 12,
-        center: center
+    map = new google.maps.Map(document.getElementById("map"), {
+        center: center,
+        zoom: 12
     });
 
+    // Inicializamos servicios de Directions
     directionsService = new google.maps.DirectionsService();
-    directionsRenderer = new google.maps.DirectionsRenderer({map: map});
+    directionsRenderer = new google.maps.DirectionsRenderer({
+        suppressMarkers: true  // usamos nuestros propios marcadores
+    });
+    directionsRenderer.setMap(map);
 
-    // Limpiar marcadores y ruta anterior si existen
-    clearMarkers();
-    directionsRenderer.set('directions', null);
+    renderPuntosEntrega();
+}
 
-    // Añadir marcadores existentes
-    puntos_entrega_data.forEach(function(punto) {
-        addMarker(
-            {lat: punto.latitud, lng: punto.longitud},
-            punto.nombre,
-            punto.orden_optimo
+/**
+ * Dibuja el origen, los puntos de entrega y la ruta usando Directions API.
+ * Ahora la ruta es: ORIGEN → puntos → ORIGEN.
+ */
+function renderPuntosEntrega() {
+    clearMap();
+
+    const bounds = new google.maps.LatLngBounds();
+    const path = [];
+
+    let originPos = null;
+
+    // 1) Dibujar origen si existe
+    if (typeof origen_coords !== "undefined" && origen_coords && origen_coords.lat && origen_coords.lng) {
+        originPos = { lat: origen_coords.lat, lng: origen_coords.lng };
+
+        const originMarker = new google.maps.Marker({
+            position: originPos,
+            map: map,
+            label: "O",   // Origen
+            title: "Origen del recorrido"
+        });
+
+        markers.push(originMarker);
+        path.push(originPos);
+        bounds.extend(originPos);
+    }
+
+    // 2) Dibujar puntos de entrega
+    if (Array.isArray(puntos_entrega_data) && puntos_entrega_data.length > 0) {
+
+        const anyOrden = puntos_entrega_data.some(
+            (p) => p.orden_optimo !== null && p.orden_optimo !== undefined
         );
-    });
 
-    // Si hay puntos para dibujar una ruta (después de la optimización)
-    if (puntos_entrega_data.length > 0 && puntos_entrega_data[0].orden_optimo !== null) {
-        drawOptimizedRoute();
-    }
-}
+        const puntos = [...puntos_entrega_data];
 
-function addMarker(location, title, order) {
-    var markerTitle = order !== null ? (order + ". " + title) : title;
+        if (anyOrden) {
+            puntos.sort((a, b) => {
+                if (a.orden_optimo == null) return 1;
+                if (b.orden_optimo == null) return -1;
+                return a.orden_optimo - b.orden_optimo;
+            });
+        }
 
-    // 🔴 AQUÍ ESTABA EL ERROR: antes tenías google.maps.Map
-    var marker = new google.maps.Marker({
-        position: location,
-        map: map,
-        title: markerTitle,
-        label: order !== null ? String(order) : '' // número de orden como etiqueta
-    });
+        puntos.forEach((p, index) => {
+            const position = { lat: p.latitud, lng: p.longitud };
 
-    markers.push(marker);
-}
+            const labelText = anyOrden && p.orden_optimo
+                ? String(p.orden_optimo)
+                : String(index + 1);
 
-function clearMarkers() {
-    for (var i = 0; i < markers.length; i++) {
-        markers[i].setMap(null);
-    }
-    markers = [];
-}
+            const marker = new google.maps.Marker({
+                position: position,
+                map: map,
+                label: labelText,
+                title: `${p.nombre} - ${p.direccion}`
+            });
 
-// Para el botón "Limpiar mapa (ruta y marcadores)"
-function clearMap() {
-    clearMarkers();
-    if (directionsRenderer) {
-        directionsRenderer.set('directions', null);
-    }
-}
-
-function drawOptimizedRoute() {
-    // Valores por defecto (Concepción) si algo viene vacío
-    var defaultLat = -36.84;
-    var defaultLng = -73.11;
-
-    var start_lat = parseFloat(document.getElementById('lat_inicio').value) || defaultLat;
-    var start_lng = parseFloat(document.getElementById('lng_inicio').value) || defaultLng;
-    var punto_inicio = {lat: start_lat, lng: start_lng};
-
-    console.log("Origen usado para la ruta:", punto_inicio);
-
-    // Limpiar ruta anterior
-    directionsRenderer.set('directions', null);
-
-    // Filtrar solo los puntos de entrega que tienen un orden óptimo asignado
-    var ordered_points = puntos_entrega_data
-        .filter(function(p) { return p.orden_optimo !== null; })
-        .sort(function(a, b) { return a.orden_optimo - b.orden_optimo; });
-    
-    if (ordered_points.length === 0) {
-        console.log("No hay puntos ordenados, no se dibuja ruta");
-        return;
-    }
-
-    var waypoints = [];
-    for (var i = 0; i < ordered_points.length; i++) {
-        waypoints.push({
-            location: {lat: ordered_points[i].latitud, lng: ordered_points[i].longitud},
-            stopover: true
+            markers.push(marker);
+            path.push(position);
+            bounds.extend(position);
         });
     }
 
-    var origin = punto_inicio;
-    var destination = punto_inicio; // vuelta al origen
+    // 🔁 3) Volver al origen al final del recorrido (si hay origen y al menos un punto)
+    if (originPos && path.length > 1) {
+        path.push(originPos);
+        bounds.extend(originPos);
+    }
 
-    directionsService.route({
+    // Ajustar mapa para que se vean todos los puntos
+    if (!bounds.isEmpty()) {
+        map.fitBounds(bounds);
+    }
+
+    // 4) Dibujar ruta real por calles
+    if (path.length > 1) {
+        drawRouteWithDirectionsAPI(path);
+    }
+}
+
+/**
+ * Calcula y dibuja la ruta usando la Directions API de Google.
+ * path: arreglo de {lat, lng} en el orden que queremos visitar.
+ * Aquí ya viene: ORIGEN → puntos → ORIGEN.
+ */
+function drawRouteWithDirectionsAPI(path) {
+    if (!directionsService || !directionsRenderer) return;
+    if (!Array.isArray(path) || path.length < 2) return;
+
+    const origin = path[0];
+    const destination = path[path.length - 1];
+
+    const waypoints = path.slice(1, -1).map((pos) => ({
+        location: pos,
+        stopover: true
+    }));
+
+    const request = {
         origin: origin,
         destination: destination,
         waypoints: waypoints,
-        optimizeWaypoints: false, // La optimización ya la hiciste con tu IA
-        travelMode: google.maps.TravelMode.DRIVING
-    }, function(response, status) {
-        if (status === 'OK') {
-            directionsRenderer.setDirections(response);
+        travelMode: google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: false  // el orden ya viene optimizado del backend
+    };
+
+    directionsService.route(request, (result, status) => {
+        console.log("Directions status:", status);
+        if (status === "OK" || status === google.maps.DirectionsStatus.OK) {
+            directionsRenderer.setDirections(result);
         } else {
-            window.alert('Directions request failed due to ' + status);
-            console.error('Directions request failed:', status, response);
+            console.error("Error en Directions API:", status);
+            // Si falla Directions, igual se ven los marcadores
         }
     });
 }
+
+/**
+ * Limpia marcadores y ruta del mapa, pero deja el mapa creado.
+ */
+function clearMap() {
+    if (markers.length > 0) {
+        markers.forEach((m) => m.setMap(null));
+        markers = [];
+    }
+
+    if (directionsRenderer) {
+        directionsRenderer.set("directions", null);
+    }
+}
+
+/**
+ * Muestra u oculta el input de dirección personalizada cuando
+ * se elige "Otra dirección..." en el select de origen.
+ */
+function toggleOrigenCustom() {
+    const select = document.getElementById("origen_predefinido");
+    const wrapper = document.getElementById("origen_custom_wrapper");
+
+    if (!select || !wrapper) return;
+
+    if (select.value === "custom") {
+        wrapper.style.display = "block";
+    } else {
+        wrapper.style.display = "none";
+    }
+}
+
+// Exponemos funciones globalmente para que el HTML pueda llamarlas
+window.initMap = initMap;
+window.clearMap = clearMap;
+window.toggleOrigenCustom = toggleOrigenCustom;
