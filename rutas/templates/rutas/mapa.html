@@ -35,7 +35,7 @@
             font-weight: 600;
         }
     </style>
-{% endblock %}
+{% endblock extra_head %}
 
 {% block content %}
     <h2>Mapa de Distribución</h2>
@@ -76,8 +76,8 @@
 
     <hr>
 
-    {# FORM PARA CONFIGURAR ORIGEN Y OPTIMIZAR RUTA #}
-    <h3>Configurar origen y optimizar ruta</h3>
+    {# FORM PARA CONFIGURAR ORIGEN / DESTINO Y OPTIMIZAR RUTA #}
+    <h3>Configurar origen, destino y optimizar ruta</h3>
 
     <form method="post" action="{% url 'optimizar_ruta' %}">
         {% csrf_token %}
@@ -116,16 +116,35 @@
             <br><br>
         </div>
 
+        <h4>Fin del recorrido</h4>
+        <label for="destino_predefinido">Destino:</label><br>
+        <select id="destino_predefinido" name="destino_predefinido"
+                style="max-width: 400px; width: 100%;">
+            <option value="same_origin">Volver a la misma bodega de origen</option>
+
+            <option value="Avenida Laguna Grande 1120, Casa 36, San Pedro de la Paz">
+                Terminar en Bodega Laguna Grande
+            </option>
+            <option value="Díaz de Solís 1879, Concepción">
+                Terminar en Bodega Díaz de Solís
+            </option>
+            <option value="Camino Los Carros 1955, Concepción">
+                Terminar en Bodega Camino Los Carros
+            </option>
+        </select>
+
+        <br><br>
+
         <h4>Precio de la bencina</h4>
         <label for="precio_bencina">Precio de bencina (CLP/L):</label><br>
         <input type="number"
                id="precio_bencina"
                name="precio_bencina"
-               step="0.01"
+               step="1"
                min="0"
                style="max-width: 200px;"
                value="{{ precio_bencina }}">
-        <small>(puedes modificarlo cuando cambie el precio por defecto tiene el valor de $1250)</small>
+        <small>(puedes modificarlo cuando cambie el precio por defecto el valor de la bencina es $1250)</small>
 
         <br><br>
 
@@ -151,6 +170,9 @@
             {% if direccion_origen %}
                 <p><strong>Origen usado:</strong> {{ direccion_origen }}</p>
             {% endif %}
+            {% if direccion_destino %}
+                <p><strong>Destino usado:</strong> {{ direccion_destino }}</p>
+            {% endif %}
             <p><strong>Distancia Total Optimizada:</strong> {{ total_distance_km }} km</p>
             <p><strong>Consumo Estimado de Bencina:</strong> {{ fuel_consumed_liters }} litros</p>
             {% if fuel_cost_clp is not None %}
@@ -163,43 +185,48 @@
     <hr>
 
     <div id="map"></div>
-{% endblock %}
+{% endblock content %}
 
 {% block extra_js %}
-    {# JS de tu app #}
     <script src="{% static 'js/main.js' %}"></script>
 
     <script>
-        // Datos que vienen desde Django, usados por main.js
         var google_maps_api_key = "{{ google_maps_api_key }}";
         var puntos_entrega_data = JSON.parse('{{ puntos_entrega_json|escapejs }}');
 
-        // Coordenadas de origen como STRINGS (para evitar problemas de coma/punto)
+        // Coordenadas de ORIGEN
         var origen_lat_str = "{{ origen_lat|default_if_none:'' }}";
         var origen_lng_str = "{{ origen_lng|default_if_none:'' }}";
-
         var origen_coords = null;
         if (origen_lat_str && origen_lng_str) {
-            // Reemplazamos coma por punto por si viene localizado: "-36,847" -> "-36.847"
             origen_lat_str = origen_lat_str.replace(',', '.');
             origen_lng_str = origen_lng_str.replace(',', '.');
-
-            var latNum = parseFloat(origen_lat_str);
-            var lngNum = parseFloat(origen_lng_str);
-
-            if (!isNaN(latNum) && !isNaN(lngNum)) {
-                origen_coords = {
-                    lat: latNum,
-                    lng: lngNum
-                };
+            var o_lat = parseFloat(origen_lat_str);
+            var o_lng = parseFloat(origen_lng_str);
+            if (!isNaN(o_lat) && !isNaN(o_lng)) {
+                origen_coords = { lat: o_lat, lng: o_lng };
             }
         }
 
-        console.log("origen_coords en template:", origen_coords);
+        // Coordenadas de DESTINO
+        var destino_lat_str = "{{ destino_lat|default_if_none:'' }}";
+        var destino_lng_str = "{{ destino_lng|default_if_none:'' }}";
+        var destino_coords = null;
+        if (destino_lat_str && destino_lng_str) {
+            destino_lat_str = destino_lat_str.replace(',', '.');
+            destino_lng_str = destino_lng_str.replace(',', '.');
+            var d_lat = parseFloat(destino_lat_str);
+            var d_lng = parseFloat(destino_lng_str);
+            if (!isNaN(d_lat) && !isNaN(d_lng)) {
+                destino_coords = { lat: d_lat, lng: d_lng };
+            }
+        }
+
+        console.log("origen_coords:", origen_coords);
+        console.log("destino_coords:", destino_coords);
     </script>
 
-    {# Carga de la API de Google Maps #}
     <script async defer
             src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&callback=initMap">
     </script>
-{% endblock %}
+{% endblock extra_js %}
