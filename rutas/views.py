@@ -14,6 +14,9 @@ from . import optimizer  # módulo de optimización
 # Precio por defecto de la bencina (CLP/L)
 DEFAULT_FUEL_PRICE = 1250
 
+# Rendimiento por defecto del vehículo (km/L)
+DEFAULT_RENDIMIENTO = getattr(optimizer, 'AUTO_RENDIMIENTO_KM_POR_LITRO', 12)
+
 
 def mapa_view(request):
     """
@@ -44,6 +47,9 @@ def mapa_view(request):
         'fuel_consumed_liters': request.session.pop('fuel_consumed_liters', None),
         'fuel_cost_clp': request.session.pop('fuel_cost_clp', None),
         'precio_bencina': request.session.pop('precio_bencina', DEFAULT_FUEL_PRICE),
+
+        # NUEVO: mantener el rendimiento que se usó en la última optimización
+        'rendimiento_vehiculo': request.session.pop('rendimiento_vehiculo', DEFAULT_RENDIMIENTO),
 
         'direccion_origen': request.session.pop('direccion_origen', ''),
         'direccion_destino': request.session.pop('direccion_destino', ''),
@@ -263,7 +269,21 @@ def optimizar_ruta(request):
             punto.save()
 
     # 8) CONSUMO Y COSTO
-    fuel_consumed = optimizer.calculate_fuel_cost(total_distance_km)
+
+    # NUEVO: leer rendimiento del formulario
+    rendimiento_str = request.POST.get('rendimiento_vehiculo', '').strip()
+    try:
+        if rendimiento_str:
+            rendimiento_vehiculo = float(rendimiento_str)
+        else:
+            rendimiento_vehiculo = DEFAULT_RENDIMIENTO
+    except ValueError:
+        rendimiento_vehiculo = DEFAULT_RENDIMIENTO
+
+    # calcular litros consumidos usando el rendimiento
+    fuel_consumed = optimizer.calculate_fuel_cost(total_distance_km, rendimiento_vehiculo)
+
+    # precio bencina
     precio_bencina_str = request.POST.get('precio_bencina', '').strip()
     try:
         precio_bencina = float(precio_bencina_str) if precio_bencina_str else DEFAULT_FUEL_PRICE
@@ -272,10 +292,12 @@ def optimizar_ruta(request):
 
     fuel_cost = fuel_consumed * precio_bencina
 
+    # guardar en sesión para mostrar en el template
     request.session['total_distance_km'] = round(total_distance_km, 2)
     request.session['fuel_consumed_liters'] = round(fuel_consumed, 2)
     request.session['fuel_cost_clp'] = round(fuel_cost, 0)
     request.session['precio_bencina'] = precio_bencina
+    request.session['rendimiento_vehiculo'] = rendimiento_vehiculo
     request.session['direccion_origen'] = direccion_origen
     request.session['direccion_destino'] = direccion_destino
 

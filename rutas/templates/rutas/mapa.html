@@ -153,6 +153,19 @@
             <br><br>
         </div>
 
+        <h4>Rendimiento del vehículo</h4>
+        <label for="rendimiento_vehiculo">Rendimiento estimado (km/L):</label><br>
+        <input type="number"
+               id="rendimiento_vehiculo"
+               name="rendimiento_vehiculo"
+               step="0.1"
+               min="1"
+               style="max-width: 200px;"
+               value="{{ rendimiento_vehiculo|default:12 }}">
+        <small>(por defecto se usa 12 km/L, puedes ajustarlo según el vehículo)</small>
+
+        <br><br>
+
         <h4>Precio de la bencina</h4>
         <label for="precio_bencina">Precio de bencina (CLP/L):</label><br>
         <input type="number"
@@ -190,6 +203,9 @@
             {% endif %}
             {% if direccion_destino %}
                 <p><strong>Destino usado:</strong> {{ direccion_destino }}</p>
+            {% endif %}
+            {% if rendimiento_vehiculo %}
+                <p><strong>Rendimiento usado:</strong> {{ rendimiento_vehiculo }} km/L</p>
             {% endif %}
             <p><strong>Distancia Total Optimizada:</strong> {{ total_distance_km }} km</p>
             <p><strong>Consumo Estimado de Bencina:</strong> {{ fuel_consumed_liters }} litros</p>

@@ -107,9 +107,25 @@ def solve_tsp(distance_matrix, num_points_entrega, start_index=0, end_index=None
     return best_route, min_distance
 
 # --- PARTE 3: Cálculos de Consumo ---
-AUTO_RENDIMIENTO_KM_POR_LITRO = 12
+AUTO_RENDIMIENTO_KM_POR_LITRO = 12  # valor por defecto
 
-def calculate_fuel_cost(total_distance_km):
+def calculate_fuel_cost(total_distance_km, rendimiento_km_por_litro=AUTO_RENDIMIENTO_KM_POR_LITRO):
+    """
+    Calcula los litros de combustible consumidos (no el costo en dinero),
+    en función de la distancia total y el rendimiento (km/L).
+
+    El costo en CLP se calcula en la vista multiplicando:
+        litros_consumidos * precio_bencina_CLP_por_L
+    """
     if total_distance_km == float('inf'):
         return float('inf')
-    return total_distance_km / AUTO_RENDIMIENTO_KM_POR_LITRO
+    if rendimiento_km_por_litro <= 0:
+        return float('inf')  # evita división por cero o negativos
+    return total_distance_km / rendimiento_km_por_litro
+
+def calculate_fuel_consumption(total_distance_km, rendimiento_km_por_litro=AUTO_RENDIMIENTO_KM_POR_LITRO):
+    """
+    Alias de calculate_fuel_cost para mantener compatibilidad de nombre
+    si más adelante quieres usarlo con este nombre.
+    """
+    return calculate_fuel_cost(total_distance_km, rendimiento_km_por_litro)
